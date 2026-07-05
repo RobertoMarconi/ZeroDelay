@@ -7,10 +7,22 @@
     // If it somehow didn't load, we stay safely at 1.0x (no acceleration).
     // A fresh controller is created per attach (see detect_and_attach) so one
     // stream's EMAs/hysteresis never steer the first seconds of the next one.
-    const controllerFactory = (typeof window !== 'undefined' && window.ZeroDelay && typeof window.ZeroDelay.createController === 'function')
-        ? window.ZeroDelay.createController
-        : null;
-    let controller = controllerFactory ? controllerFactory() : null;
+    const zd = (typeof window !== 'undefined' && window.ZeroDelay) ? window.ZeroDelay : null;
+    const classicFactory = (zd && typeof zd.createController === 'function') ? zd.createController : null;
+    const bandFactory = (zd && typeof zd.createBandController === 'function') ? zd.createBandController : null;
+
+    // Pick the controller for the current settings: the buffer-centric "Estável"
+    // (band) controller when `band` is on, otherwise the classic catch-up one.
+    // Both expose the same calcPlaybackRate signature so the hot loop is agnostic.
+    function make_controller(settings) {
+        const s = settings || {};
+        if (s.band && bandFactory) return bandFactory(s.centerBuffer);
+        return classicFactory ? classicFactory() : null;
+    }
+
+    let controller = make_controller(null);
+    let controller_band = false;   // whether `controller` is the band variant
+    let controller_center = null;  // its center (to detect slider changes)
     // Buffer level below which the health indicator turns red — shared with the
     // controller's own back-off threshold (falls back if the controller is absent).
     const BUFFER_WARN = controller ? controller.WARN_BUFFER : 2.5;
@@ -497,6 +509,18 @@
             setChip(msg_current, settings.copiedLabel);
         }
         apply_a11y_labels(settings.a11yLabels);
+
+        // Swap the controller only when the mode TYPE or the band center actually
+        // changed — toggling an indicator must not reset the EMA. Switching
+        // between classic and band (or moving the slider) starts a fresh EMA,
+        // which is what we want for a behavior change.
+        const wantBand = !!settings.band;
+        if (!controller || wantBand !== controller_band || (wantBand && settings.centerBuffer !== controller_center)) {
+            controller = make_controller(settings);
+            controller_band = wantBand;
+            controller_center = settings.centerBuffer;
+        }
+
         clearInterval(interval);
         if (engine_degraded) return; // paused until the next navigation retries
         if (settings.enabled || settings.skip || settings.showPlaybackRate || settings.showLatency || settings.showHealth || settings.showEstimation || settings.showCurrent) {
@@ -581,8 +605,11 @@
         // Fresh stream, fresh controller state: EMAs/hysteresis measured on the
         // previous live must not steer the first seconds of this one.
         // (applied_rate is kept — apply_playback_rate's divergence logic already
-        // handles whatever rate the new player starts at.)
-        if (controllerFactory) controller = controllerFactory();
+        // handles whatever rate the new player starts at.) The variant is chosen
+        // from the settings we have so far; load_settings re-syncs if they change.
+        controller = make_controller(current_settings);
+        controller_band = !!(current_settings && current_settings.band);
+        controller_center = current_settings ? current_settings.centerBuffer : null;
         seekableEnds = [];
 
         // The stall watchdog counts buffering events for THIS stream (a mode too

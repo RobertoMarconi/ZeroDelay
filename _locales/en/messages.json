@@ -86,6 +86,21 @@
    "modeExtremeGain": {
       "message": "buffer ~2s"
    },
+   "modeEstavel": {
+      "message": "Stable"
+   },
+   "modeEstavelDesc": {
+      "message": "Keeps a steady buffer around a target you choose, slowing down slightly to rebuild it when your connection dips. Fewer stalls, at the cost of staying a bit further from live."
+   },
+   "modeEstavelConn": {
+      "message": "Unstable or fluctuating internet"
+   },
+   "modeEstavelGain": {
+      "message": "steady buffer"
+   },
+   "centerLabel": {
+      "message": "Target buffer"
+   },
    "sectionIndicators": {
       "message": "Player indicators"
    },

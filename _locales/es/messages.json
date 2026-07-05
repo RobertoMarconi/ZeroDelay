@@ -86,6 +86,21 @@
    "modeExtremeGain": {
       "message": "búfer ~2s"
    },
+   "modeEstavel": {
+      "message": "Estable"
+   },
+   "modeEstavelDesc": {
+      "message": "Mantiene un búfer estable en torno a un objetivo que eliges, ralentizando un poco para recomponerlo cuando tu conexión baja. Menos cortes, a costa de quedar un poco más lejos del directo."
+   },
+   "modeEstavelConn": {
+      "message": "Internet inestable o que fluctúa"
+   },
+   "modeEstavelGain": {
+      "message": "búfer estable"
+   },
+   "centerLabel": {
+      "message": "Búfer objetivo"
+   },
    "sectionIndicators": {
       "message": "Indicadores del reproductor"
    },

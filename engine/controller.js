@@ -134,7 +134,90 @@
         return { calcPlaybackRate, getState, WARN_BUFFER: STALL_FLOOR + 1.0 };
     }
 
-    const api = { createController };
+    // ----------------------------------------------------------------------
+    // "Stable" (band) controller. Same goal as the classic one above — keep you
+    // close to live — but built for connections that WOBBLE. Two differences make
+    // it survive oscillation where the classic modes stall:
+    //   1. it targets a chosen distance-behind-live `center` (the slider, seconds)
+    //      instead of always chasing the ~2s edge, so it holds a real cushion;
+    //   2. it will play BELOW 1.0x to REBUILD the buffer when it starves — the
+    //      classic controller never does (it only speeds up or rests, hoping the
+    //      network refills on its own).
+    //
+    // One rule drives it, no branches:
+    //
+    //     rate = 1 + chase - rebuild
+    //
+    //   • chase  (>= 0): speed up toward live, in proportion to how far past
+    //                    `center` the LATENCY is (capped), BRAKED by buffer safety;
+    //   • rebuild(>= 0): slow below 1.0x to refill a starving cushion, eased out as
+    //                    latency climbs so we can't drift behind live forever.
+    // A single buffer-safety factor (0 at the stall floor, 1 at/above the center)
+    // gates both: healthy cushion -> chase freely, no rebuild; thin cushion -> stop
+    // chasing and rebuild. Because latency is read directly (not through the lagging
+    // buffer EMA), it settles onto the target instead of overshooting it. The 30s
+    // skip in inject.js is the final backstop; `center` is clamped defensively (the
+    // popup already caps it to [2, 6]).
+    function createBandController(center) {
+        const STALL_FLOOR = 1.5;   // buffer danger line: below it we play <1.0x to rebuild
+        const SLOW_MIN = 0.90;     // slowest playback while rebuilding
+        const MAX_RATE = 1.15;     // fastest playback while chasing live (calmer than the aggressive modes)
+        const CHASE_GAIN = 0.05;   // +rate per second of latency beyond the target
+        const DRIFT_CEIL = 12.0;   // stop rebuilding (let latency hold) once this far behind
+        const DRIFT_SPAN = 5.0;    // ease the rebuild out over the seconds before the ceiling
+
+        const C = Math.min(6.0, Math.max(2.0, isFinite(center) ? center : 3.5));
+        const SPAN = Math.max(0.5, C - STALL_FLOOR); // buffer range the safety factor spans
+
+        let buffer_ema = null;     // smoothed buffer health (same EMA as the classic one)
+        let last_rate = 1.0;
+
+        function clamp(x, lo, hi) { return x < lo ? lo : x > hi ? hi : x; }
+
+        // Signature mirrors the classic controller (speed/bufferTarget/auto are
+        // ignored) so inject.js drives both through one code path.
+        function calcPlaybackRate(_speed, latency, health) {
+            if (!isFinite(health)) return (last_rate = 1.0);
+            buffer_ema = buffer_ema === null ? health : buffer_ema * 0.9 + health * 0.1;
+            const b = buffer_ema;
+
+            // Buffer safety: 1 when the cushion is at/above the target, 0 at (or
+            // below) the stall floor. Its complement is the rebuild "deficit".
+            const safety = clamp((b - STALL_FLOOR) / SPAN, 0, 1);
+
+            // OBJECTIVE — chase live: how far past the target latency we are, turned
+            // into a catch-up rate (capped), then braked by buffer safety. Zero once
+            // we're at/inside the target, so it never speeds up past live.
+            const behind = isFinite(latency) ? Math.max(0, latency - C) : 0;
+            const chase = Math.min(CHASE_GAIN * behind, MAX_RATE - 1.0) * safety;
+
+            // SAFETY — rebuild: slow below 1.0x to refill a thin cushion (hardest at
+            // the floor), but eased out as latency climbs so a weak link can't keep
+            // us slowing while we drift ever further behind (30s skip is the backstop).
+            const budget = isFinite(latency) ? clamp((DRIFT_CEIL - latency) / DRIFT_SPAN, 0, 1) : 1;
+            const rebuild = (1.0 - SLOW_MIN) * (1 - safety) * budget;
+
+            return (last_rate = 1.0 + chase - rebuild);
+        }
+
+        function getState() {
+            return {
+                buffer_ema, center: C, rate: last_rate,
+                catching_up: last_rate > 1.001,
+                rebuilding: last_rate < 0.999,
+            };
+        }
+
+        // Warn (red) roughly a second below the center, but never above the
+        // classic threshold — so a small center doesn't paint the chip red always.
+        return { calcPlaybackRate, getState, center: C, WARN_BUFFER: Math.min(2.5, Math.max(1.5, C - 1.0)) };
+    }
+
+    const api = { createController, createBandController };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
-    if (typeof window !== 'undefined') (window.ZeroDelay = window.ZeroDelay || {}).createController = createController;
+    if (typeof window !== 'undefined') {
+        const zd = (window.ZeroDelay = window.ZeroDelay || {});
+        zd.createController = createController;
+        zd.createBandController = createBandController;
+    }
 }());

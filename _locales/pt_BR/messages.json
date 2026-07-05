@@ -86,6 +86,21 @@
    "modeExtremeGain": {
       "message": "buffer ~2s"
    },
+   "modeEstavel": {
+      "message": "Estável"
+   },
+   "modeEstavelDesc": {
+      "message": "Mantém um buffer estável em torno de um alvo que você escolhe, desacelerando um pouco para recompô-lo quando a conexão oscila. Menos travamentos, ao custo de ficar um pouco mais longe do ao vivo."
+   },
+   "modeEstavelConn": {
+      "message": "Internet instável ou que oscila"
+   },
+   "modeEstavelGain": {
+      "message": "buffer estável"
+   },
+   "centerLabel": {
+      "message": "Buffer alvo"
+   },
    "sectionIndicators": {
       "message": "Indicadores no player"
    },

@@ -75,6 +75,14 @@ export const label = {
     modeExtremeConn: msg('modeExtremeConn', 'Internet muito rápida e estável (~50+ Mbps)'),
     modeExtremeGain: msg('modeExtremeGain', 'buffer ~2s'),
 
+    modeEstavel: msg('modeEstavel', 'Estável'),
+    modeEstavelDesc: msg('modeEstavelDesc', 'Mantém um buffer estável em torno de um alvo que você escolhe, desacelerando um pouco para recompô-lo quando a conexão oscila. Menos travamentos, ao custo de ficar um pouco mais longe do ao vivo.'),
+    modeEstavelConn: msg('modeEstavelConn', 'Internet instável ou que oscila'),
+    modeEstavelGain: msg('modeEstavelGain', 'buffer estável'),
+
+    // "Estável" mode — target-buffer slider label.
+    bandCenter: msg('centerLabel', 'Buffer alvo'),
+
     // Player indicators
     sectionIndicators: msg('sectionIndicators', 'Indicadores no player'),
     showPlaybackRate: msg('showPlaybackRate'),
@@ -173,7 +181,7 @@ export const label = {
 // engine keeps resolving them (defaulting to off), even though the popup no
 // longer exposes a toggle for them.
 // ---------------------------------------------------------------------------
-export const storage = ['enabled', 'playbackRate', 'showPlaybackRate', 'showLatency', 'showHealth', 'showEstimation', 'showCurrent', 'bufferTarget', 'auto', 'skip', 'skipThreathold'];
+export const storage = ['enabled', 'playbackRate', 'showPlaybackRate', 'showLatency', 'showHealth', 'showEstimation', 'showCurrent', 'bufferTarget', 'auto', 'skip', 'skipThreathold', 'band', 'centerBuffer'];
 
 // ---------------------------------------------------------------------------
 // Donation nudge — gentle, optional, NEVER restricts usage. These keys live
@@ -341,7 +349,9 @@ export function donateEligible(d, now) {
 // When the stream keeps stalling, the mode to suggest instead — one that keeps
 // more buffer (more stable). Returns null if already at the calmest mode (or off).
 export function calmerMode(mode) {
-    if (mode === 'off' || mode === 'suave') return null;
+    // "Estável" already rebuilds the buffer on dips — it IS the calmest option,
+    // so the stall offer has nothing gentler to suggest.
+    if (mode === 'off' || mode === 'suave' || mode === 'estavel') return null;
     if (mode === 'auto') return 'suave';
     return 'auto';
 }
@@ -370,6 +380,14 @@ export const minBufferTarget = 2.0;
 export const maxBufferTarget = 15.0;
 export const stepBufferTarget = 0.5;
 
+// "Estável" (band) mode: off by default; when on, the buffer-centric controller
+// parks the buffer around `centerBuffer` seconds (user-chosen via the slider).
+export const defaultBand = false;
+export const defaultCenterBuffer = 3.5;
+export const minCenterBuffer = 2.0;
+export const maxCenterBuffer = 6.0;
+export const stepCenterBuffer = 0.5;
+
 // Skip-to-live is on by default, 30 s behind.
 export const defaultSkip = true;
 export const defaultSkipThreathold = 30.0;
@@ -382,15 +400,28 @@ export const stepSkipThreathold = 1.0;
 // no longer edits primitives directly; clicking a mode writes its primitives,
 // and the active mode is derived back from them (see deriveMode).
 // ---------------------------------------------------------------------------
+// Every non-band preset carries `band: false` so switching INTO it from the
+// "Estável" mode turns the band controller off (chrome.storage.set merges —
+// keys the preset omits keep their old value). `estavel` deliberately omits
+// `centerBuffer`: the slider owns that value and must survive mode re-entry.
 export const presets = {
     off: {
         enabled: false,
         skip: false,
+        band: false,
     },
     auto: {
         enabled: true,
         playbackRate: 1.25,
         auto: true,
+        skip: true,
+        skipThreathold: 30.0,
+        band: false,
+    },
+    estavel: {
+        enabled: true,
+        band: true,
+        auto: false,
         skip: true,
         skipThreathold: 30.0,
     },
@@ -401,6 +432,7 @@ export const presets = {
         bufferTarget: 5.0,
         skip: true,
         skipThreathold: 30.0,
+        band: false,
     },
     balanced: {
         enabled: true,
@@ -409,6 +441,7 @@ export const presets = {
         bufferTarget: 4.0,
         skip: true,
         skipThreathold: 30.0,
+        band: false,
     },
     aggressive: {
         enabled: true,
@@ -417,6 +450,7 @@ export const presets = {
         bufferTarget: 3.0,
         skip: true,
         skipThreathold: 30.0,
+        band: false,
     },
     extreme: {
         enabled: true,
@@ -425,15 +459,17 @@ export const presets = {
         bufferTarget: 2.0,
         skip: true,
         skipThreathold: 30.0,
+        band: false,
     },
 };
 
 // Order shown in the UI, with display metadata.
-export const modeOrder = ['off', 'auto', 'suave', 'balanced', 'aggressive', 'extreme'];
+export const modeOrder = ['off', 'auto', 'estavel', 'suave', 'balanced', 'aggressive', 'extreme'];
 
 export const modeMeta = {
     off: { title: label.modeOff, desc: label.modeOffDesc, conn: label.modeOffConn, gain: label.modeOffGain },
     auto: { title: label.modeAuto, desc: label.modeAutoDesc, conn: label.modeAutoConn, gain: label.modeAutoGain },
+    estavel: { title: label.modeEstavel, desc: label.modeEstavelDesc, conn: label.modeEstavelConn, gain: label.modeEstavelGain },
     suave: { title: label.modeSuave, desc: label.modeSuaveDesc, conn: label.modeSuaveConn, gain: label.modeSuaveGain },
     balanced: { title: label.modeBalanced, desc: label.modeBalancedDesc, conn: label.modeBalancedConn, gain: label.modeBalancedGain },
     aggressive: { title: label.modeAggressive, desc: label.modeAggressiveDesc, conn: label.modeAggressiveConn, gain: label.modeAggressiveGain },
@@ -459,6 +495,8 @@ export function resolveSettings(d) {
         auto: value(d.auto, defaultAuto),
         skip: value(d.skip, defaultSkip),
         skipThreathold: value(d.skipThreathold, defaultSkipThreathold),
+        band: value(d.band, defaultBand),
+        centerBuffer: limitValue(d.centerBuffer, defaultCenterBuffer, minCenterBuffer, maxCenterBuffer, stepCenterBuffer),
     };
 }
 

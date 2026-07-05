@@ -123,6 +123,9 @@ const ICONS = {
     extreme: morph(
         '<path d="M4 13h8v6h2v2h-2v2h-2v-8H2v-4h2v2Zm12 6h-2v-2h2v2Zm2-2h-2v-2h2v2Zm2-2h-2v-2h2v2Zm-6-6h8v4h-2v-2h-8V5h-2V3h2V1h2v8Zm-8 2H4V9h2v2Zm2-2H6V7h2v2Zm2-2H8V5h2v2Z"/>',
         '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>'),
+    estavel: morph(
+        '<rect x="3" y="9" width="3" height="12"/><rect x="8" y="5" width="3" height="16"/><rect x="13" y="7" width="3" height="14"/><rect x="18" y="11" width="3" height="10"/>',
+        '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>'),
     check: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>',
     wifi: solo('<path d="M12 20h.01"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M5 12.859a10 10 0 0 1 14 0"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/>'),
     gain: solo('<path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/>'),
@@ -271,6 +274,28 @@ function watchHexaActive() {
     chrome.storage.local.get([common.hexaActiveKey], d => set(d[common.hexaActiveKey]));
     chrome.storage.onChanged.addListener((changes, area) => {
         if (area === 'local' && changes[common.hexaActiveKey]) set(changes[common.hexaActiveKey].newValue);
+    });
+}
+
+// The "Estável" mode's single knob: the target buffer (seconds) the band
+// controller parks around. Only shown while that mode is active (see refresh).
+function renderBandControl() {
+    const slider = $('#band-slider');
+    $('#band-label').textContent = L.bandCenter;
+    slider.min = common.minCenterBuffer;
+    slider.max = common.maxCenterBuffer;
+    slider.step = common.stepCenterBuffer;
+    slider.setAttribute('aria-label', L.bandCenter);
+    slider.addEventListener('input', () => {
+        const v = parseFloat(slider.value);
+        $('#band-value').textContent = v.toFixed(1) + 's';
+        setOne('centerBuffer', v);
+    });
+    updaters.push(() => {
+        const v = common.limitValue(state.centerBuffer, common.defaultCenterBuffer,
+            common.minCenterBuffer, common.maxCenterBuffer, common.stepCenterBuffer);
+        slider.value = v;
+        $('#band-value').textContent = v.toFixed(1) + 's';
     });
 }
 
@@ -608,6 +633,8 @@ function refresh() {
     // the global LIVE↔SYNCED seal (red/pulsing when syncing, gray/still when Off).
     // Reads existing state only — no storage, messages, or behavior touched.
     $('#app').dataset.signal = mode === 'off' ? 'degraded' : 'synced';
+    // The target-buffer slider belongs to the "Estável" mode only.
+    $('#band-control').hidden = mode !== 'estavel';
     let activeIndex = -1;
     common.modeOrder.forEach((name, i) => {
         const on = name === mode;
@@ -676,6 +703,7 @@ function updateChannelHint() {
     renderThemeToggle();
     renderModes();
     renderChannelMemory();
+    renderBandControl();
     renderIndicators();
     renderHexa();
     watchHexaActive();

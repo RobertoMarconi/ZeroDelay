@@ -50,6 +50,22 @@ e o projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
   reaplica ao voltar. Nunca sobrepõe o seu modo atual num canal sem preferência
   salva; o popup mostra **"lembrado para este canal"** com um **"esquecer"**.
   Baseado na ideia da PR #22 de [@wthallys](https://github.com/wthallys).
+- **Modo "Estável"** _(experimental)_: novo modo de reprodução para conexões que
+  oscilam. Você escolhe, num slider de 2 a 6 s, a distância-alvo do ao vivo; o
+  controlador **persegue o ao vivo como os modos normais, mas com um freio de
+  buffer que pode recompor a reprodução abaixo de 1.0x** — algo que nenhum modo
+  original faz (eles só aceleram ou descansam em 1.0x, torcendo para a rede
+  reabastecer). Uma única regra o guia: `taxa = 1 + perseguir − recompor`, onde
+  "perseguir" reduz a latência (freado pela saúde do buffer) e "recompor"
+  desacelera para refazer o colchão quando ele afina — sem derivar do ao vivo
+  indefinidamente (o pulo aos 30 s segue como trava). Prioriza estabilidade em
+  troca de ficar um pouco mais longe do ao vivo. Usa chaves de storage novas
+  (`band`, `centerBuffer`), sem alterar as existentes.
+
+  > **Observação:** o modo é experimental e pode mudar com o feedback de uso.
+  > Futuramente o slider de alvo poderia ser estendido aos demais modos — com ou
+  > sem a recomposição abaixo de 1.0x —, unificando "quão perto do ao vivo" num
+  > controle só.
 
 ### Corrigido
 
